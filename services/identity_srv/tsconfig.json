@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "baseUrl": "./",
+
+    "paths": {
+      "@/api/*": ["./src/api/*"],
+      "@/prisma/*": ["./src/prisma/*", "./prisma/*"]
+    }
+  },
+  "include": ["**/src/**/*.ts", "**/src/**/*.tsx"],
+}
