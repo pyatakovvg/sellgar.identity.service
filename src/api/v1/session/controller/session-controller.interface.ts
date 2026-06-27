@@ -1,13 +1,11 @@
-import { CreateSessionDto } from './dto/create-session.dto';
-import { RefreshSessionDto } from './dto/refresh-session.dto';
-import { RestoreSessionDto } from './dto/restore-session.dto';
 import { RemoveSessionDto } from './dto/remove-session.dto';
-
-import { SessionEntity } from '../session.entity';
+import { VerifySessionDto } from './dto/verify-session.dto';
+import { RenewSessionDto } from './dto/renew-session.dto';
+import { SessionCreateDto } from '../service/dto/session-create.dto';
 
 export abstract class SessionControllerInterface {
-  abstract create(dto: CreateSessionDto): Promise<SessionEntity>;
-  abstract refresh(dto: RefreshSessionDto): Promise<SessionEntity>;
-  abstract restore(dto: RestoreSessionDto): Promise<SessionEntity>;
-  abstract remove(dto: RemoveSessionDto): Promise<SessionEntity>;
+  abstract issue(dto: SessionCreateDto);
+  abstract verify(dto: VerifySessionDto);
+  abstract renew(dto: RenewSessionDto);
+  abstract revoke(dto: RemoveSessionDto);
 }

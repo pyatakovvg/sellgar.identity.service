@@ -9,4 +9,16 @@ export class SessionCreateDto {
 
   @IsString()
   fingerprint: string;
+
+  @IsString()
+  clientType: string;
+
+  @IsString()
+  gateway: string;
+
+  @IsString()
+  authMethod: string;
+
+  @IsString()
+  assuranceLevel: string;
 }

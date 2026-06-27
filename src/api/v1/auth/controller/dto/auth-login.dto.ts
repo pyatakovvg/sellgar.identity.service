@@ -12,4 +12,10 @@ export class AuthLoginDto {
 
   @IsString()
   fingerprint: string;
+
+  @IsString()
+  clientType: string;
+
+  @IsString()
+  gateway: string;
 }

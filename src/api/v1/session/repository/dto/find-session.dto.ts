@@ -5,5 +5,5 @@ export class FindSessionDto {
   userUuid: string;
 
   @IsString()
-  fingerprint: string;
+  fingerprintHash: string;
 }

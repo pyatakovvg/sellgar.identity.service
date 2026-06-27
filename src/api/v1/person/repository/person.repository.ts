@@ -12,7 +12,6 @@ export class PersonRepository {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   async getByUserUuid(userUuid: string) {
-    console.log('Person by user uuid:', userUuid);
     const result = await this.dataSource
       .createQueryBuilder()
       .select([
@@ -28,8 +27,6 @@ export class PersonRepository {
       .from(PersonModel, 'person')
       .where('person.user_uuid = :userUuid', { userUuid })
       .getOneOrFail();
-
-    console.log('Person by user uuid result:', result);
 
     const resultInstance = plainToInstance(PersonEntity, result);
 

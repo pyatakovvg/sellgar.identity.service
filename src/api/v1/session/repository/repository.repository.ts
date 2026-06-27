@@ -1,8 +1,8 @@
 import { validateOrReject } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { Injectable } from '@nestjs/common';
-import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 
 import { FindSessionDto } from './dto/find-session.dto';
 import { SessionHasDto } from './dto/session-has.dto';
@@ -12,44 +12,41 @@ import { SessionRemoveDto } from './dto/session-remove.dto';
 
 import { SessionModel } from '../session.model';
 import { SessionEntity } from '../session.entity';
-import { RefreshTokenModel } from '@/api/v1/refresh-token/refresh-token.model';
+
+const SESSION_SELECT = [
+  'session.uuid',
+  'session.userUuid',
+  'session.device',
+  'session.fingerprintHash',
+  'session.secretHash',
+  'session.clientType',
+  'session.gateway',
+  'session.authMethod',
+  'session.assuranceLevel',
+  'session.status',
+  'session.isRevoked',
+  'session.renewRequiredAt',
+  'session.expiresAt',
+  'session.revokedAt',
+  'session.revokeReason',
+  'session.createdAt',
+  'session.updatedAt',
+];
 
 @Injectable()
 export class SessionRepository {
-  constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
-    @InjectRepository(SessionModel) private readonly sessionModel: Repository<SessionModel>,
-  ) {}
+  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   async find(dto: FindSessionDto): Promise<SessionEntity | null> {
     const result = await this.dataSource
       .createQueryBuilder()
-      .select([
-        'session.uuid',
-        'session.userUuid',
-        'session.device',
-        'session.fingerprint',
-        'session.isRevoked',
-        'session.createdAt',
-        'session.updatedAt',
-        'refreshToken.uuid',
-        'refreshToken.token',
-        'refreshToken.isRevoked',
-        'refreshToken.expiresAt',
-        'refreshToken.createdAt',
-      ])
+      .select(SESSION_SELECT)
       .from(SessionModel, 'session')
-      .leftJoinAndMapOne(
-        'session.refreshToken',
-        RefreshTokenModel,
-        'refreshToken',
-        'refreshToken.sessionUuid = session.uuid',
-      )
       .where('session.user_uuid = :userUuid', { userUuid: dto.userUuid })
-      .andWhere('session.fingerprint = :fingerprint', { fingerprint: dto.fingerprint })
+      .andWhere('session.fingerprint_hash = :fingerprintHash', { fingerprintHash: dto.fingerprintHash })
+      .andWhere('session.status = :status', { status: 'active' })
+      .andWhere('session.is_revoked = :isRevoked', { isRevoked: false })
       .getOne();
-
-    console.log('Session find:', result);
 
     if (!result) {
       return null;
@@ -63,46 +60,40 @@ export class SessionRepository {
   }
 
   async get(dto: SessionHasDto): Promise<SessionEntity | null> {
-    console.log('Session get dto:', dto);
     try {
       const builder = this.dataSource
         .createQueryBuilder()
-        .select([
-          'session.uuid',
-          'session.userUuid',
-          'session.device',
-          'session.fingerprint',
-          'session.isRevoked',
-          'session.createdAt',
-          'session.updatedAt',
-          'refreshToken.uuid',
-          'refreshToken.token',
-          'refreshToken.isRevoked',
-          'refreshToken.expiresAt',
-          'refreshToken.createdAt',
-        ])
+        .select(SESSION_SELECT)
         .from(SessionModel, 'session')
-        .leftJoinAndMapOne(
-          'session.refreshToken',
-          RefreshTokenModel,
-          'refreshToken',
-          'refreshToken.sessionUuid = session.uuid',
-        )
-        .where('session.fingerprint = :fingerprint', { fingerprint: dto.fingerprint });
+        .where('1 = 1');
+
+      if (!this.hasGetSelector(dto)) {
+        return null;
+      }
 
       if (dto.uuid) {
-        builder.orWhere('session.uuid = :uuid', { uuid: dto.uuid });
+        builder.andWhere('session.uuid = :uuid', { uuid: dto.uuid });
+      }
+      if (dto.secretHash) {
+        builder.andWhere('session.secretHash = :secretHash', { secretHash: dto.secretHash });
       }
       if (dto.userUuid) {
-        builder.orWhere('session.userUuid = :userUuid', { userUuid: dto.userUuid });
+        builder.andWhere('session.userUuid = :userUuid', { userUuid: dto.userUuid });
       }
       if (dto.device) {
-        builder.orWhere('session.device = :device', { device: dto.device });
+        builder.andWhere('session.device = :device', { device: dto.device });
+      }
+      if (dto.fingerprintHash) {
+        builder.andWhere('session.fingerprintHash = :fingerprintHash', { fingerprintHash: dto.fingerprintHash });
+      }
+      if (dto.clientType) {
+        builder.andWhere('session.clientType = :clientType', { clientType: dto.clientType });
+      }
+      if (dto.gateway) {
+        builder.andWhere('session.gateway = :gateway', { gateway: dto.gateway });
       }
 
-      const result = await builder.getOneOrFail();
-
-      console.log('Session get:', result);
+      const result = await builder.getOne();
 
       if (!result) {
         return null;
@@ -113,8 +104,8 @@ export class SessionRepository {
       await validateOrReject(resultInstance);
 
       return resultInstance;
-    } catch (err) {
-      console.error(12367, err);
+    } catch {
+      return null;
     }
   }
 
@@ -132,12 +123,22 @@ export class SessionRepository {
         .values({
           userUuid: dto.userUuid,
           device: dto.device,
-          fingerprint: dto.fingerprint,
+          fingerprintHash: dto.fingerprintHash,
+          secretHash: dto.secretHash,
+          clientType: dto.clientType,
+          gateway: dto.gateway,
+          authMethod: dto.authMethod,
+          assuranceLevel: dto.assuranceLevel,
+          status: 'active',
+          isRevoked: false,
+          renewRequiredAt: dto.renewRequiredAt,
+          expiresAt: dto.expiresAt,
         })
         .execute();
 
       const result = await runner.manager
         .createQueryBuilder(SessionModel, 'session')
+        .select(SESSION_SELECT)
         .where('session.uuid = :uuid', { uuid: insertedSession.identifiers[0].uuid })
         .getOneOrFail();
 
@@ -149,10 +150,10 @@ export class SessionRepository {
 
       return resultInstance;
     } catch (error) {
-      runner.rollbackTransaction();
+      await runner.rollbackTransaction();
       throw error;
     } finally {
-      runner.release();
+      await runner.release();
     }
   }
 
@@ -169,19 +170,27 @@ export class SessionRepository {
         .set({
           userUuid: dto.userUuid,
           device: dto.device,
-          fingerprint: dto.fingerprint,
+          fingerprintHash: dto.fingerprintHash,
+          secretHash: dto.secretHash,
+          clientType: dto.clientType,
+          gateway: dto.gateway,
+          authMethod: dto.authMethod,
+          assuranceLevel: dto.assuranceLevel,
+          renewRequiredAt: dto.renewRequiredAt,
+          expiresAt: dto.expiresAt,
         })
         .where('uuid = :uuid', { uuid: dto.uuid })
         .execute();
 
       const result = await runner.manager
         .createQueryBuilder(SessionModel, 'session')
+        .select(SESSION_SELECT)
         .where('session.uuid = :uuid', { uuid: updatedSession.raw[0].uuid })
         .getOneOrFail();
 
       await runner.commitTransaction();
 
-      const resultInstance = plainToInstance(SessionEntity, updatedSession.raw[0]);
+      const resultInstance = plainToInstance(SessionEntity, result);
 
       await validateOrReject(resultInstance);
 
@@ -194,49 +203,134 @@ export class SessionRepository {
     }
   }
 
-  async remove(dto: SessionRemoveDto) {
+  async renew(
+    uuid: string,
+    currentSecretHash: string,
+    fingerprintHash: string,
+    renewRequiredAt: Date,
+    expiresAt: Date,
+    secretHash: string,
+  ): Promise<SessionEntity | null> {
     const runner = this.dataSource.createQueryRunner();
 
     await runner.connect();
     await runner.startTransaction();
 
     try {
-      const session = await runner.manager
+      const updatedSession = await runner.manager
         .createQueryBuilder()
-        .select([
-          'session.uuid',
-          'session.userUuid',
-          'session.device',
-          'session.fingerprint',
-          'session.isRevoked',
-          'session.createdAt',
-          'session.updatedAt',
-          'refreshToken.uuid',
-          'refreshToken.token',
-          'refreshToken.isRevoked',
-          'refreshToken.expiresAt',
-          'refreshToken.createdAt',
-        ])
-        .from(SessionModel, 'session')
-        .leftJoinAndMapOne(
-          'session.refreshToken',
-          RefreshTokenModel,
-          'refreshToken',
-          'refreshToken.sessionUuid = session.uuid',
-        )
-        .where('session.user_uuid = :userUuid', { userUuid: dto.userUuid })
-        .andWhere('session.fingerprint = :fingerprint', { fingerprint: dto.fingerprint })
-        .getOne();
-
-      await runner.manager
-        .createQueryBuilder()
-        .delete()
-        .from(SessionModel)
-        .where('session.user_uuid = :userUuid', { userUuid: dto.userUuid })
-        .andWhere('session.fingerprint = :fingerprint', { fingerprint: dto.fingerprint })
+        .update(SessionModel)
+        .set({
+          renewRequiredAt,
+          expiresAt,
+          secretHash,
+        })
+        .where('uuid = :uuid', { uuid })
+        .andWhere('secret_hash = :currentSecretHash', { currentSecretHash })
+        .andWhere('fingerprint_hash = :fingerprintHash', { fingerprintHash })
+        .andWhere('status = :status', { status: 'active' })
+        .andWhere('is_revoked = :isRevoked', { isRevoked: false })
         .execute();
 
+      if (!updatedSession.affected) {
+        await runner.rollbackTransaction();
+
+        return null;
+      }
+
+      const result = await runner.manager
+        .createQueryBuilder(SessionModel, 'session')
+        .select(SESSION_SELECT)
+        .where('session.uuid = :uuid', { uuid })
+        .getOneOrFail();
+
       await runner.commitTransaction();
+
+      const resultInstance = plainToInstance(SessionEntity, result);
+
+      await validateOrReject(resultInstance);
+
+      return resultInstance;
+    } catch (error) {
+      await runner.rollbackTransaction();
+      throw error;
+    } finally {
+      await runner.release();
+    }
+  }
+
+  async remove(dto: SessionRemoveDto): Promise<SessionEntity | null> {
+    const runner = this.dataSource.createQueryRunner();
+
+    await runner.connect();
+    await runner.startTransaction();
+
+    try {
+      const builder = runner.manager
+        .createQueryBuilder()
+        .update(SessionModel)
+        .set({
+          status: 'revoked',
+          isRevoked: true,
+          revokedAt: new Date(),
+          revokeReason: dto.revokeReason ?? 'manual',
+        });
+
+      if (dto.uuid) {
+        builder.where('uuid = :uuid', { uuid: dto.uuid });
+      } else if (dto.secretHash) {
+        builder.where('secret_hash = :secretHash', { secretHash: dto.secretHash });
+      } else if (dto.userUuid && dto.fingerprintHash) {
+        builder
+          .where('user_uuid = :userUuid', { userUuid: dto.userUuid })
+          .andWhere('fingerprint_hash = :fingerprintHash', {
+            fingerprintHash: dto.fingerprintHash,
+          });
+      } else {
+        throw new Error('Session revoke selector is required');
+      }
+
+      if (dto.clientType) {
+        builder.andWhere('client_type = :clientType', { clientType: dto.clientType });
+      }
+      if (dto.gateway) {
+        builder.andWhere('gateway = :gateway', { gateway: dto.gateway });
+      }
+      if (dto.fingerprintHash) {
+        builder.andWhere('fingerprint_hash = :fingerprintHash', { fingerprintHash: dto.fingerprintHash });
+      }
+
+      await builder.execute();
+
+      const resultBuilder = runner.manager.createQueryBuilder(SessionModel, 'session').select(SESSION_SELECT);
+
+      if (dto.uuid) {
+        resultBuilder.where('session.uuid = :uuid', { uuid: dto.uuid });
+      } else if (dto.secretHash) {
+        resultBuilder.where('session.secretHash = :secretHash', { secretHash: dto.secretHash });
+      } else {
+        resultBuilder
+          .where('session.user_uuid = :userUuid', { userUuid: dto.userUuid })
+          .andWhere('session.fingerprintHash = :fingerprintHash', { fingerprintHash: dto.fingerprintHash });
+      }
+
+      if (dto.clientType) {
+        resultBuilder.andWhere('session.clientType = :clientType', { clientType: dto.clientType });
+      }
+      if (dto.gateway) {
+        resultBuilder.andWhere('session.gateway = :gateway', { gateway: dto.gateway });
+      }
+      if (dto.fingerprintHash) {
+        resultBuilder.andWhere('session.fingerprintHash = :fingerprintHash', { fingerprintHash: dto.fingerprintHash });
+      }
+
+      const session = await resultBuilder.getOne();
+
+      await runner.commitTransaction();
+
+      if (!session) {
+        return null;
+      }
 
       const resultInstance = plainToInstance(SessionEntity, session);
 
@@ -249,5 +343,24 @@ export class SessionRepository {
     } finally {
       await runner.release();
     }
+  }
+
+  async expire(uuid: string): Promise<void> {
+    await this.dataSource
+      .createQueryBuilder()
+      .update(SessionModel)
+      .set({
+        status: 'expired',
+        isRevoked: true,
+        revokedAt: new Date(),
+        revokeReason: 'expired',
+      })
+      .where('uuid = :uuid', { uuid })
+      .andWhere('status = :status', { status: 'active' })
+      .execute();
+  }
+
+  private hasGetSelector(dto: SessionHasDto): boolean {
+    return Boolean(dto.uuid || dto.secretHash || dto.userUuid || dto.device || dto.fingerprintHash);
   }
 }

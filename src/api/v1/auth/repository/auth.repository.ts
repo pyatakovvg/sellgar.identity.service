@@ -18,7 +18,11 @@ export class AuthRepository {
       .where('user.login = :login', { login })
       .andWhere('user.password = :password', { password })
       .andWhere('user.isBlocked = :isBlocked', { isBlocked: false })
-      .getOneOrFail();
+      .getOne();
+
+    if (!result) {
+      return null;
+    }
 
     const resultInstance = plainToInstance(AuthEntity, result);
 

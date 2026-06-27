@@ -10,13 +10,17 @@ const requiredStringKeys = [
   'DATABASE_USERNAME',
   'DATABASE_PASSWORD',
   'DATABASE_DATABASE_NAME',
-  'EXPIRES_IN_ACCESS_TOKEN',
-  'EXPIRES_IN_REFRESH_TOKEN',
-  'ACCESS_TOKEN_SECRET',
-  'REFRESH_TOKEN_SECRET',
+  'LEGACY_PASSWORD_HMAC_SECRET',
+  'SESSION_SECRET_HASH_KEY',
+  'FINGERPRINT_STORAGE_SECRET',
 ];
 
-const requiredNumberKeys = ['AMQP_PORT', 'DATABASE_PORT'];
+const requiredNumberKeys = [
+  'AMQP_PORT',
+  'DATABASE_PORT',
+  'SESSION_RENEW_REQUIRED_AFTER_MS',
+  'SESSION_EXPIRES_AFTER_MS',
+];
 
 function requireString(config: EnvConfig, key: string): string {
   const value = config[key];

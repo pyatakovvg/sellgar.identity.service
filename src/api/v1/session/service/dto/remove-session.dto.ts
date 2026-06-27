@@ -1,12 +1,15 @@
-import { IsString, IsUUID } from 'class-validator';
+import { IsString } from 'class-validator';
 
 export class RemoveSessionDto {
-  @IsUUID()
-  uuid: string;
-
   @IsString()
-  userUuid: string;
+  sessionSecret: string;
 
   @IsString()
   fingerprint: string;
+
+  @IsString()
+  clientType: string;
+
+  @IsString()
+  gateway: string;
 }

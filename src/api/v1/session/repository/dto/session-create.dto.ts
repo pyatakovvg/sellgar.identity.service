@@ -8,5 +8,24 @@ export class SessionCreateDto {
   device: string;
 
   @IsString()
-  fingerprint: string;
+  fingerprintHash: string;
+
+  @IsString()
+  secretHash: string;
+
+  @IsString()
+  clientType: string;
+
+  @IsString()
+  gateway: string;
+
+  @IsString()
+  authMethod: string;
+
+  @IsString()
+  assuranceLevel: string;
+
+  renewRequiredAt: Date;
+
+  expiresAt: Date;
 }

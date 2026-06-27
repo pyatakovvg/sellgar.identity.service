@@ -5,6 +5,10 @@ export class SessionHasDto {
   @IsOptional()
   uuid?: string;
 
+  @IsString()
+  @IsOptional()
+  secretHash?: string;
+
   @IsUUID()
   @IsOptional()
   userUuid?: string;
@@ -14,5 +18,14 @@ export class SessionHasDto {
   device?: string;
 
   @IsString()
-  fingerprint: string;
+  @IsOptional()
+  fingerprintHash?: string;
+
+  @IsString()
+  @IsOptional()
+  clientType?: string;
+
+  @IsString()
+  @IsOptional()
+  gateway?: string;
 }

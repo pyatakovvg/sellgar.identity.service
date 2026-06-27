@@ -1,6 +1,6 @@
 import { IsString } from 'class-validator';
 
-export class RemoveSessionDto {
+export class VerifySessionDto {
   @IsString()
   sessionSecret: string;
 

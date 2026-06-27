@@ -6,11 +6,9 @@ import {
   UpdateDateColumn,
   JoinColumn,
   ManyToOne,
-  OneToOne,
 } from 'typeorm';
 
 import { UserModel } from '../user/user.model';
-import { RefreshTokenModel } from '../refresh-token/refresh-token.model';
 
 @Entity('session')
 export class SessionModel {
@@ -27,11 +25,41 @@ export class SessionModel {
   @Column({ name: 'device', type: 'varchar', length: 256 })
   device: string;
 
-  @Column({ name: 'fingerprint', type: 'varchar', length: 256 })
-  fingerprint: string;
+  @Column({ name: 'fingerprint_hash', type: 'varchar', length: 128 })
+  fingerprintHash: string;
+
+  @Column({ name: 'secret_hash', type: 'varchar', length: 128 })
+  secretHash: string;
+
+  @Column({ name: 'client_type', type: 'varchar', length: 32, default: 'web' })
+  clientType: string;
+
+  @Column({ name: 'gateway', type: 'varchar', length: 64, default: 'admin_gw' })
+  gateway: string;
+
+  @Column({ name: 'auth_method', type: 'varchar', length: 64, default: 'password' })
+  authMethod: string;
+
+  @Column({ name: 'assurance_level', type: 'varchar', length: 32, default: 'medium' })
+  assuranceLevel: string;
+
+  @Column({ name: 'status', type: 'varchar', length: 32, default: 'active' })
+  status: string;
 
   @Column({ name: 'is_revoked', type: 'boolean', default: false })
   isRevoked: boolean;
+
+  @Column({ name: 'renew_required_at', type: 'timestamp' })
+  renewRequiredAt: Date;
+
+  @Column({ name: 'expires_at', type: 'timestamp' })
+  expiresAt: Date;
+
+  @Column({ name: 'revoked_at', type: 'timestamp', nullable: true })
+  revokedAt?: Date;
+
+  @Column({ name: 'revoke_reason', type: 'varchar', length: 128, nullable: true })
+  revokeReason?: string;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
@@ -44,6 +72,4 @@ export class SessionModel {
   })
   updatedAt: Date;
 
-  @OneToOne(() => RefreshTokenModel, (refreshToken) => refreshToken.session)
-  refreshToken: RefreshTokenModel;
 }
