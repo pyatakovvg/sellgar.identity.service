@@ -25,10 +25,10 @@ import { UserModule } from './user/user.module';
             return {
               urls: [
                 {
-                  port: config.get('AMQP_PORT'),
-                  hostname: config.get('AMQP_HOSTNAME'),
-                  username: config.get('AMQP_USERNAME'),
-                  password: config.get('AMQP_PASSWORD'),
+                  port: config.getOrThrow<number>('AMQP_PORT'),
+                  hostname: config.getOrThrow<string>('AMQP_HOSTNAME'),
+                  username: config.getOrThrow<string>('AMQP_USERNAME'),
+                  password: config.getOrThrow<string>('AMQP_PASSWORD'),
                 },
               ],
               transport: Transport.RMQ,
@@ -41,7 +41,7 @@ import { UserModule } from './user/user.module';
                   exclusive: true,
                   autoDelete: true,
                 },
-                exchange: config.get('AMQP_EVENTS_EXCHANGE'),
+                exchange: config.getOrThrow<string>('AMQP_IDENTITY_SRV_EXCHANGE'),
                 exchangeType: 'topic',
               },
             };

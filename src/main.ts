@@ -8,23 +8,23 @@ import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 
 async function bootstrap() {
   const logger = new Logger();
-  const config = new ConfigService();
 
   const app: NestExpressApplication = await NestFactory.create(AppModule);
+  const config = app.get(ConfigService);
 
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.RMQ,
     options: {
       urls: [
         {
-          port: config.get('AMQP_PORT'),
-          hostname: config.get('AMQP_HOSTNAME'),
-          username: config.get('AMQP_USERNAME'),
-          password: config.get('AMQP_PASSWORD'),
+          port: config.getOrThrow<number>('AMQP_PORT'),
+          hostname: config.getOrThrow<string>('AMQP_HOSTNAME'),
+          username: config.getOrThrow<string>('AMQP_USERNAME'),
+          password: config.getOrThrow<string>('AMQP_PASSWORD'),
         },
       ],
       persistent: true,
-      queue: config.get('AMQP_IDENTITY_SRV_COMMAND_QUEUE'),
+      queue: config.getOrThrow<string>('AMQP_IDENTITY_SRV_COMMAND_QUEUE'),
       queueOptions: {
         durable: true,
       },
