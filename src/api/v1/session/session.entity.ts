@@ -21,6 +21,14 @@ export class SessionEntity {
   secretHash: string;
 
   @IsString()
+  @IsOptional()
+  previousSecretHash?: string;
+
+  @IsDate()
+  @IsOptional()
+  previousSecretAcceptedUntil?: Date;
+
+  @IsString()
   clientType: string;
 
   @IsString()

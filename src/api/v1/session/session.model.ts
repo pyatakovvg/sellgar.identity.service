@@ -31,6 +31,12 @@ export class SessionModel {
   @Column({ name: 'secret_hash', type: 'varchar', length: 128 })
   secretHash: string;
 
+  @Column({ name: 'previous_secret_hash', type: 'varchar', length: 128, nullable: true })
+  previousSecretHash?: string;
+
+  @Column({ name: 'previous_secret_accepted_until', type: 'timestamp', nullable: true })
+  previousSecretAcceptedUntil?: Date;
+
   @Column({ name: 'client_type', type: 'varchar', length: 32, default: 'web' })
   clientType: string;
 
@@ -71,5 +77,4 @@ export class SessionModel {
     onUpdate: 'CURRENT_TIMESTAMP',
   })
   updatedAt: Date;
-
 }

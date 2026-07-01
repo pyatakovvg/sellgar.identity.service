@@ -8,6 +8,7 @@ import { SessionModel } from './api/v1/session/session.model';
 import { SessionFirstAuth1718450000000 } from './migrations/1718450000000-session-first-auth';
 import { SessionBindingRenewWindow1718451000000 } from './migrations/1718451000000-session-binding-renew-window';
 import { DropLegacySessionColumns1718452000000 } from './migrations/1718452000000-drop-legacy-session-columns';
+import { SessionRenewSecretGrace1718453000000 } from './migrations/1718453000000-session-renew-secret-grace';
 
 declare const process: {
   env: Record<string, string | undefined>;
@@ -25,6 +26,7 @@ export default new DataSource({
     SessionFirstAuth1718450000000,
     SessionBindingRenewWindow1718451000000,
     DropLegacySessionColumns1718452000000,
+    SessionRenewSecretGrace1718453000000,
   ],
   migrationsTableName: 'typeorm_migrations',
   synchronize: false,

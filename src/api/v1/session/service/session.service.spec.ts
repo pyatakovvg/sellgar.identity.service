@@ -11,6 +11,7 @@ describe('SessionService', () => {
     find: jest.fn(),
     create: jest.fn(),
     get: jest.fn(),
+    getByPreviousSecret: jest.fn(),
     renew: jest.fn(),
     remove: jest.fn(),
     expire: jest.fn(),
@@ -22,6 +23,7 @@ describe('SessionService', () => {
         SESSION_SECRET_HASH_KEY: 'session.secret.hash.key',
         FINGERPRINT_STORAGE_SECRET: 'fingerprint.storage.secret.key',
         SESSION_RENEW_REQUIRED_AFTER_MS: '300000',
+        SESSION_RENEW_GRACE_AFTER_MS: '30000',
         SESSION_EXPIRES_AFTER_MS: '86400000',
       };
 
@@ -34,6 +36,7 @@ describe('SessionService', () => {
   beforeEach(() => {
     jest.useFakeTimers().setSystemTime(NOW);
     jest.clearAllMocks();
+    sessionRepository.getByPreviousSecret.mockResolvedValue(null);
     service = new SessionService(sessionRepository as never, config as never);
   });
 
@@ -103,6 +106,49 @@ describe('SessionService', () => {
         gateway: 'admin_gw',
       }),
     );
+    expect(sessionRepository.getByPreviousSecret).not.toHaveBeenCalled();
+  });
+
+  it('accepts the previous session secret during the renew grace window', async () => {
+    sessionRepository.get.mockResolvedValue(null);
+    sessionRepository.getByPreviousSecret.mockResolvedValue(makeSession());
+
+    await expect(verify()).resolves.toEqual({
+      data: {
+        status: 'active',
+        userId: USER_ID,
+      },
+      meta: {},
+    });
+
+    expect(sessionRepository.getByPreviousSecret).toHaveBeenCalledWith(
+      expect.objectContaining({
+        secretHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        fingerprintHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        clientType: 'web',
+        gateway: 'admin_gw',
+      }),
+      NOW,
+    );
+    expect(sessionRepository.expire).not.toHaveBeenCalled();
+    expect(sessionRepository.renew).not.toHaveBeenCalled();
+  });
+
+  it('expires a previous-secret session when the absolute window is over', async () => {
+    sessionRepository.get.mockResolvedValue(null);
+    sessionRepository.getByPreviousSecret.mockResolvedValue(
+      makeSession({
+        expiresAt: new Date('2026-06-21T23:59:59.000Z'),
+      }),
+    );
+
+    await expect(verify()).resolves.toEqual({
+      data: {
+        status: 'expired',
+      },
+      meta: {},
+    });
+    expect(sessionRepository.expire).toHaveBeenCalledWith(SESSION_ID);
   });
 
   it('returns renew_required without changing the session from verify', async () => {
@@ -166,6 +212,7 @@ describe('SessionService', () => {
       new Date('2026-06-22T00:05:00.000Z'),
       new Date('2026-06-23T00:00:00.000Z'),
       expect.stringMatching(/^[a-f0-9]{64}$/),
+      new Date('2026-06-22T00:00:30.000Z'),
     );
     expect(result).toEqual({
       uuid: SESSION_ID,

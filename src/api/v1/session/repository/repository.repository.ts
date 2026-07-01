@@ -19,6 +19,8 @@ const SESSION_SELECT = [
   'session.device',
   'session.fingerprintHash',
   'session.secretHash',
+  'session.previousSecretHash',
+  'session.previousSecretAcceptedUntil',
   'session.clientType',
   'session.gateway',
   'session.authMethod',
@@ -94,6 +96,39 @@ export class SessionRepository {
       }
 
       const result = await builder.getOne();
+
+      if (!result) {
+        return null;
+      }
+
+      const resultInstance = plainToInstance(SessionEntity, result);
+
+      await validateOrReject(resultInstance);
+
+      return resultInstance;
+    } catch {
+      return null;
+    }
+  }
+
+  async getByPreviousSecret(dto: SessionHasDto, now: Date): Promise<SessionEntity | null> {
+    try {
+      if (!dto.secretHash || !dto.fingerprintHash || !dto.clientType || !dto.gateway) {
+        return null;
+      }
+
+      const result = await this.dataSource
+        .createQueryBuilder()
+        .select(SESSION_SELECT)
+        .from(SessionModel, 'session')
+        .where('session.previousSecretHash = :secretHash', { secretHash: dto.secretHash })
+        .andWhere('session.previousSecretAcceptedUntil >= :now', { now })
+        .andWhere('session.fingerprintHash = :fingerprintHash', { fingerprintHash: dto.fingerprintHash })
+        .andWhere('session.clientType = :clientType', { clientType: dto.clientType })
+        .andWhere('session.gateway = :gateway', { gateway: dto.gateway })
+        .andWhere('session.status = :status', { status: 'active' })
+        .andWhere('session.isRevoked = :isRevoked', { isRevoked: false })
+        .getOne();
 
       if (!result) {
         return null;
@@ -210,6 +245,7 @@ export class SessionRepository {
     renewRequiredAt: Date,
     expiresAt: Date,
     secretHash: string,
+    previousSecretAcceptedUntil: Date,
   ): Promise<SessionEntity | null> {
     const runner = this.dataSource.createQueryRunner();
 
@@ -224,6 +260,8 @@ export class SessionRepository {
           renewRequiredAt,
           expiresAt,
           secretHash,
+          previousSecretHash: currentSecretHash,
+          previousSecretAcceptedUntil,
         })
         .where('uuid = :uuid', { uuid })
         .andWhere('secret_hash = :currentSecretHash', { currentSecretHash })

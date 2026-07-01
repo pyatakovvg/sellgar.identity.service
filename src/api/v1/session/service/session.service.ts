@@ -9,6 +9,7 @@ import { VerifySessionDto } from './dto/verify-session.dto';
 import { RenewSessionDto } from './dto/renew-session.dto';
 
 import { SessionRepository } from '../repository/repository.repository';
+import { SessionEntity } from '../session.entity';
 
 type SessionIssueResult = {
   uuid: string;
@@ -76,46 +77,42 @@ export class SessionService {
   }
 
   async verify(dto: VerifySessionDto): Promise<SessionVerifyResult> {
+    const secretHash = this.hashSessionSecret(dto.sessionSecret);
+    const fingerprintHash = this.hashFingerprint(dto.fingerprint);
+    const now = new Date();
     const session = await this.sessionRepository.get({
-      secretHash: this.hashSessionSecret(dto.sessionSecret),
-      fingerprintHash: this.hashFingerprint(dto.fingerprint),
+      secretHash,
+      fingerprintHash,
       clientType: dto.clientType,
       gateway: dto.gateway,
     });
 
-    if (!session) {
-      return { data: { status: 'invalid' }, meta: {} };
+    if (session) {
+      return this.verifyActiveSession(session, now, false);
     }
 
-    if (session.isRevoked || session.status !== 'active') {
-      return { data: { status: this.toVerifyStatus(session.status, session.isRevoked) }, meta: {} };
-    }
-
-    const now = new Date();
-
-    if (now > session.expiresAt) {
-      await this.sessionRepository.expire(session.uuid);
-
-      return { data: { status: 'expired' }, meta: {} };
-    }
-
-    if (now >= session.renewRequiredAt) {
-      return { data: { status: 'renew_required' }, meta: {} };
-    }
-
-    return {
-      data: {
-        status: 'active',
-        userId: session.userUuid,
+    const previousSecretSession = await this.sessionRepository.getByPreviousSecret(
+      {
+        secretHash,
+        fingerprintHash,
+        clientType: dto.clientType,
+        gateway: dto.gateway,
       },
-      meta: {},
-    };
+      now,
+    );
+
+    if (previousSecretSession) {
+      return this.verifyActiveSession(previousSecretSession, now, true);
+    }
+
+    return { data: { status: 'invalid' }, meta: {} };
   }
 
   async renew(dto: RenewSessionDto): Promise<SessionRenewResult | null> {
     const fingerprintHash = this.hashFingerprint(dto.fingerprint);
+    const currentSecretHash = this.hashSessionSecret(dto.sessionSecret);
     const session = await this.sessionRepository.get({
-      secretHash: this.hashSessionSecret(dto.sessionSecret),
+      secretHash: currentSecretHash,
       fingerprintHash,
       clientType: dto.clientType,
       gateway: dto.gateway,
@@ -134,7 +131,6 @@ export class SessionService {
     }
 
     const sessionSecret = this.generateSessionSecret();
-    const currentSecretHash = this.hashSessionSecret(dto.sessionSecret);
     const renewedSession = await this.sessionRepository.renew(
       session.uuid,
       currentSecretHash,
@@ -142,6 +138,7 @@ export class SessionService {
       this.addMilliseconds(now, this.getNumberConfig('SESSION_RENEW_REQUIRED_AFTER_MS', 300_000)),
       this.addMilliseconds(now, this.getNumberConfig('SESSION_EXPIRES_AFTER_MS', 86_400_000)),
       this.hashSessionSecret(sessionSecret),
+      this.addMilliseconds(now, this.getNumberConfig('SESSION_RENEW_GRACE_AFTER_MS', 30_000)),
     );
 
     if (!renewedSession) {
@@ -197,6 +194,34 @@ export class SessionService {
 
   private addMilliseconds(date: Date, milliseconds: number): Date {
     return new Date(date.getTime() + milliseconds);
+  }
+
+  private async verifyActiveSession(
+    session: SessionEntity,
+    now: Date,
+    isPreviousSecret: boolean,
+  ): Promise<SessionVerifyResult> {
+    if (session.isRevoked || session.status !== 'active') {
+      return { data: { status: this.toVerifyStatus(session.status, session.isRevoked) }, meta: {} };
+    }
+
+    if (now > session.expiresAt) {
+      await this.sessionRepository.expire(session.uuid);
+
+      return { data: { status: 'expired' }, meta: {} };
+    }
+
+    if (!isPreviousSecret && now >= session.renewRequiredAt) {
+      return { data: { status: 'renew_required' }, meta: {} };
+    }
+
+    return {
+      data: {
+        status: 'active',
+        userId: session.userUuid,
+      },
+      meta: {},
+    };
   }
 
   private toVerifyStatus(status: string, isRevoked: boolean): SessionVerifyResult['data']['status'] {
