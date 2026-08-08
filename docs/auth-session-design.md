@@ -213,6 +213,7 @@ identity.session.list
 ```ts
 {
   status: 'active' | 'renew_required' | 'expired' | 'revoked' | 'invalid';
+  sessionId?: string;
   userId?: string;
 }
 ```

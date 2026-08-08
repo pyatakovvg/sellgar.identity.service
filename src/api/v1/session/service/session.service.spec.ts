@@ -92,6 +92,7 @@ describe('SessionService', () => {
 
     await expect(verify()).resolves.toEqual({
       data: {
+        sessionId: SESSION_ID,
         status: 'active',
         userId: USER_ID,
       },
@@ -115,6 +116,7 @@ describe('SessionService', () => {
 
     await expect(verify()).resolves.toEqual({
       data: {
+        sessionId: SESSION_ID,
         status: 'active',
         userId: USER_ID,
       },

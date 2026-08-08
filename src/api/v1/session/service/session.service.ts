@@ -20,6 +20,7 @@ type SessionIssueResult = {
 type SessionVerifyResult = {
   data: {
     status: 'active' | 'renew_required' | 'invalid' | 'revoked' | 'expired';
+    sessionId?: string;
     userId?: string;
   };
   meta: Record<string, never>;
@@ -217,6 +218,7 @@ export class SessionService {
 
     return {
       data: {
+        sessionId: session.uuid,
         status: 'active',
         userId: session.userUuid,
       },
