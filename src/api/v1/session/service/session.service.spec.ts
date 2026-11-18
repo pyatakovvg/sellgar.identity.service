@@ -44,7 +44,7 @@ describe('SessionService', () => {
     jest.useRealTimers();
   });
 
-  it('replaces an active session for the same user and fingerprint before creating a new one', async () => {
+  it('delegates account replacement and guest closure to one repository transaction', async () => {
     sessionRepository.find.mockResolvedValue(makeSession({ uuid: SESSION_ID }));
     sessionRepository.create.mockImplementation(async (dto) =>
       makeSession({
@@ -67,10 +67,7 @@ describe('SessionService', () => {
       assuranceLevel: 'medium',
     });
 
-    expect(sessionRepository.remove).toHaveBeenCalledWith({
-      uuid: SESSION_ID,
-      revokeReason: 'replaced',
-    });
+    expect(sessionRepository.remove).not.toHaveBeenCalled();
     expect(sessionRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
         userUuid: USER_ID,
@@ -83,6 +80,8 @@ describe('SessionService', () => {
     expect(result).toEqual({
       uuid: 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb',
       userId: USER_ID,
+      ownerUuid: USER_ID,
+      expiresAt: '2026-06-23T00:00:00.000Z',
       sessionSecret: expect.any(String),
     });
   });
@@ -95,6 +94,8 @@ describe('SessionService', () => {
         sessionId: SESSION_ID,
         status: 'active',
         userId: USER_ID,
+        ownerUuid: USER_ID,
+        expiresAt: '2026-06-23T00:00:00.000Z',
       },
       meta: {},
     });
@@ -119,6 +120,8 @@ describe('SessionService', () => {
         sessionId: SESSION_ID,
         status: 'active',
         userId: USER_ID,
+        ownerUuid: USER_ID,
+        expiresAt: '2026-06-23T00:00:00.000Z',
       },
       meta: {},
     });
@@ -160,11 +163,8 @@ describe('SessionService', () => {
       }),
     );
 
-    await expect(verify()).resolves.toEqual({
-      data: {
-        status: 'renew_required',
-      },
-      meta: {},
+    await expect(verify()).resolves.toMatchObject({
+      data: { status: 'renew_required', sessionId: SESSION_ID, userId: USER_ID, ownerUuid: USER_ID },
     });
     expect(sessionRepository.renew).not.toHaveBeenCalled();
   });
@@ -219,6 +219,8 @@ describe('SessionService', () => {
     expect(result).toEqual({
       uuid: SESSION_ID,
       userId: USER_ID,
+      ownerUuid: USER_ID,
+      expiresAt: '2026-06-23T00:00:00.000Z',
       sessionSecret: expect.any(String),
     });
   });
@@ -242,6 +244,65 @@ describe('SessionService', () => {
     });
   });
 
+  it('issues a real guest session without finding or creating a user', async () => {
+    sessionRepository.create.mockImplementation(async (dto) => makeSession({ ...dto }));
+    const result = await service.issueGuest({
+      device: 'Browser',
+      fingerprint: 'browser',
+      clientType: 'web',
+      gateway: 'client_gw',
+    });
+    expect(result.userId).toBeNull();
+    expect(result.ownerUuid).toMatch(/^[a-f0-9-]{36}$/);
+    expect(result.expiresAt).toBe('2026-07-22T00:00:00.000Z');
+    expect(sessionRepository.find).not.toHaveBeenCalled();
+    expect(sessionRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ userUuid: null, authMethod: 'guest' }),
+    );
+  });
+
+  it('rejects guest issuance for admin even on the internal bus', async () => {
+    await expect(
+      service.issueGuest({ device: 'Browser', fingerprint: 'browser', clientType: 'web', gateway: 'admin_gw' }),
+    ).rejects.toBeDefined();
+    expect(sessionRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('preserves the guest owner through verification, passive socket checks and renewal', async () => {
+    const ownerUuid = 'b54e15ce-2a22-464f-8507-0f9122300db1';
+    const guest = makeSession({ userUuid: null, ownerUuid, gateway: 'client_gw' });
+    sessionRepository.get.mockResolvedValue(guest);
+    sessionRepository.renew.mockResolvedValue(guest);
+    await expect(verify()).resolves.toMatchObject({ data: { userId: null, ownerUuid } });
+    await expect(service.check(SESSION_ID)).resolves.toMatchObject({ data: { userId: null, ownerUuid } });
+    expect(sessionRepository.renew).not.toHaveBeenCalled();
+    await expect(
+      service.renew({ sessionSecret: 'secret', fingerprint: 'fp', clientType: 'web', gateway: 'client_gw' }),
+    ).resolves.toMatchObject({ userId: null, ownerUuid });
+    expect(sessionRepository.renew.mock.calls[0][4]).toEqual(new Date('2026-07-22T00:00:00.000Z'));
+  });
+
+  it('passes only the hashed current credential into the atomic sign-in transition', async () => {
+    sessionRepository.create.mockImplementation(async (dto) => makeSession({ ...dto }));
+    await service.create({
+      userUuid: USER_ID,
+      device: 'Browser',
+      fingerprint: 'fp',
+      clientType: 'web',
+      gateway: 'client_gw',
+      authMethod: 'password',
+      assuranceLevel: 'medium',
+      sessionSecret: 'guest-secret',
+    });
+    expect(sessionRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerUuid: USER_ID,
+        replacedSessionSecretHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
+    expect(sessionRepository.remove).not.toHaveBeenCalled();
+  });
+
   function verify() {
     return service.verify({
       sessionSecret: 'current-session-secret',
@@ -251,10 +312,32 @@ describe('SessionService', () => {
     });
   }
 
+  it('returns the normalized owner only for an active client session during socket checks', async () => {
+    sessionRepository.get.mockResolvedValue(
+      makeSession({ gateway: 'client_gw', renewRequiredAt: new Date('2026-06-21') }),
+    );
+    await expect(service.check(SESSION_ID)).resolves.toMatchObject({
+      data: { status: 'active', ownerUuid: USER_ID, userId: USER_ID, sessionId: SESSION_ID },
+    });
+    expect(sessionRepository.get).toHaveBeenCalledWith({ uuid: SESSION_ID, gateway: 'client_gw' });
+    sessionRepository.get.mockResolvedValue(makeSession({ status: 'revoked', isRevoked: true }));
+    await expect(service.check(SESSION_ID)).resolves.toEqual({ data: { status: 'revoked' }, meta: {} });
+  });
+
+  it('revokes a renewed session when logout carries its previous secret within grace', async () => {
+    sessionRepository.remove.mockResolvedValueOnce(null).mockResolvedValueOnce(makeSession({ status: 'revoked' }));
+    sessionRepository.getByPreviousSecret.mockResolvedValue(makeSession());
+    await service.remove({ sessionSecret: 'previous', fingerprint: 'fp', clientType: 'web', gateway: 'client_gw' });
+    expect(sessionRepository.remove).toHaveBeenLastCalledWith(
+      expect.objectContaining({ uuid: SESSION_ID, gateway: 'client_gw', revokeReason: 'manual' }),
+    );
+  });
+
   function makeSession(overrides: Record<string, unknown> = {}) {
     return {
       uuid: SESSION_ID,
       userUuid: USER_ID,
+      ownerUuid: USER_ID,
       device: 'Chrome (GNU/Linux)',
       fingerprintHash: 'stored-fingerprint-hash',
       secretHash: 'stored-secret-hash',

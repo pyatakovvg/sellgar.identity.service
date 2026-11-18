@@ -116,3 +116,33 @@ RabbitMQ и PostgreSQL должны запускаться из общей dev-�
 ## Документация для агентов
 
 Архитектурные ограничения, текущий аудит и порядок безопасных изменений описаны в `AGENTS.md`.
+
+## Session context посетителя
+
+Session issue/renew и active verify дополнительно возвращают ownerUuid и expiresAt
+(ISO timestamp). Identity — единственный владелец этого соответствия: сейчас для
+аккаунта ownerUuid=userUuid, одинаковый во всех его сессиях. Admin consumers
+сохраняют прежние поля и продолжают работать.
+
+Внутренний `identity.session.check { sessionUuid }` проверяет только `client_gw`
+сессию для Cart sockets и возвращает `{ data: { status, sessionId?, userId?,
+ownerUuid?, expiresAt? }, meta: {} }`. Нет cookie/secret/hash в ответе. При активной
+сессии renewal window не требует менять ticket посреди ее короткой lease; revoked
+или expired не допускаются. Проверка не является публичным HTTP endpoint.
+Logout с прежним секретом в пределах установленного grace отзывает ту же сессию
+после проверки fingerprint/clientType/gateway.
+
+Гостевой режим использует ту же Session: user_uuid nullable, owner_uuid обязателен.
+identity.session.issueGuest выдаёт сессию client_gw/web без создания User и Cart.
+Гостевой owner стабилен при renew; срок GUEST_SESSION_IDLE_TIMEOUT_MS по умолчанию
+30 дней. verify/check пассивны. Sign-in получает текущий sessionSecret только от
+проверенного gateway; после успешной проверки пароля одна транзакция создаёт
+аккаунтную сессию, отзывает гостя и пишет identity.owner.closed.v1 в outbox.
+Неверный пароль ничего не меняет. Область замены аккаунта включает gateway/clientType.
+
+Worker завершает истёкших гостей и публикует lifecycle-события с повтором в
+AMQP_EVENTS_EXCHANGE. Identity не зависит от Cart: каждый потребитель применяет
+свою политику завершения владельца. Logout аккаунта не публикует owner.closed.
+Применить GuestSessions1794870000000 перед новым runtime. При отсутствии ts-node
+после yarn build:identity_srv использовать
+`node node_modules/typeorm/cli.js -d dist/data-source.js migration:run`.

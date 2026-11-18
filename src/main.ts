@@ -33,6 +33,8 @@ async function bootstrap() {
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
+  app.enableShutdownHooks();
+  await app.init();
   await app.startAllMicroservices();
 
   logger.log('Service has been started.');

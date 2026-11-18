@@ -4,8 +4,12 @@ export class SessionEntity {
   @IsUUID()
   uuid: string;
 
+  @IsOptional()
   @IsUUID()
-  userUuid: string;
+  userUuid: string | null;
+
+  @IsUUID()
+  ownerUuid: string;
 
   @IsString()
   device: string;

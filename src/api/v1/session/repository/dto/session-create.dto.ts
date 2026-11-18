@@ -1,8 +1,14 @@
-import { IsUUID, IsString } from 'class-validator';
+import { IsUUID, IsString, IsOptional } from 'class-validator';
 
 export class SessionCreateDto {
+  @IsOptional()
   @IsUUID()
-  userUuid: string;
+  userUuid: string | null;
+
+  @IsUUID()
+  ownerUuid: string;
+
+  replacedSessionSecretHash?: string;
 
   @IsString()
   device: string;

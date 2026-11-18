@@ -19,6 +19,7 @@ export class AuthController {
 
     return await this.sessionService.create({
       userUuid: user.uuid,
+      sessionSecret: dto.sessionSecret,
       device: dto.device,
       fingerprint: dto.fingerprint,
       clientType: dto.clientType,

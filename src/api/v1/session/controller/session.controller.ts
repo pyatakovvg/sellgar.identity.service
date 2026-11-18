@@ -10,6 +10,8 @@ import { SessionCreateDto } from '../service/dto/session-create.dto';
 
 import { SessionService } from '../service/session.service';
 import { SessionControllerInterface } from './session-controller.interface';
+import { IssueGuestSessionDto } from './dto/issue-guest-session.dto';
+import { CheckSessionDto } from './dto/check-session.dto';
 
 @Controller()
 export class SessionController implements SessionControllerInterface {
@@ -25,9 +27,19 @@ export class SessionController implements SessionControllerInterface {
     return await this.sessionService.create(dto);
   }
 
+  @MessagePattern({ cmd: 'identity.session.issueGuest' })
+  issueGuest(@Payload() dto: IssueGuestSessionDto) {
+    return this.sessionService.issueGuest(dto);
+  }
+
   @MessagePattern({ cmd: 'identity.session.verify' })
   async verify(@Payload() dto: VerifySessionDto) {
     return await this.sessionService.verify(dto);
+  }
+
+  @MessagePattern({ cmd: 'identity.session.check' })
+  check(@Payload() dto: CheckSessionDto) {
+    return this.sessionService.check(dto.sessionUuid);
   }
 
   @MessagePattern({ cmd: 'identity.session.renew' })

@@ -1,6 +1,10 @@
+import * as crypto from 'node:crypto';
+
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as crypto from 'crypto';
+import { RpcException } from '@nestjs/microservices';
+
+import { IssueGuestSessionDto } from '../controller/dto/issue-guest-session.dto';
 
 import { FindSessionDto } from './dto/find-session.dto';
 import { SessionCreateDto } from './dto/session-create.dto';
@@ -13,23 +17,29 @@ import { SessionEntity } from '../session.entity';
 
 type SessionIssueResult = {
   uuid: string;
-  userId: string;
+  userId: string | null;
   sessionSecret: string;
+  ownerUuid: string;
+  expiresAt: string;
 };
 
 type SessionVerifyResult = {
   data: {
     status: 'active' | 'renew_required' | 'invalid' | 'revoked' | 'expired';
     sessionId?: string;
-    userId?: string;
+    userId?: string | null;
+    ownerUuid?: string;
+    expiresAt?: string;
   };
   meta: Record<string, never>;
 };
 
 type SessionRenewResult = {
   uuid: string;
-  userId: string;
+  userId: string | null;
   sessionSecret: string;
+  ownerUuid: string;
+  expiresAt: string;
 };
 
 @Injectable()
@@ -48,23 +58,14 @@ export class SessionService {
 
   async create(dto: SessionCreateDto): Promise<SessionIssueResult> {
     const fingerprintHash = this.hashFingerprint(dto.fingerprint);
-    const lastSession = await this.find({
-      userUuid: dto.userUuid,
-      fingerprint: dto.fingerprint,
-    });
-
-    if (lastSession) {
-      await this.sessionRepository.remove({
-        uuid: lastSession.uuid,
-        revokeReason: 'replaced',
-      });
-    }
-
     const sessionSecret = this.generateSessionSecret();
     const now = new Date();
+    const { sessionSecret: previousSecret, ...sessionInput } = dto;
     const newSession = await this.sessionRepository.create({
-      ...dto,
+      ...sessionInput,
       fingerprintHash,
+      ownerUuid: dto.userUuid,
+      replacedSessionSecretHash: previousSecret ? this.hashSessionSecret(previousSecret) : undefined,
       secretHash: this.hashSessionSecret(sessionSecret),
       renewRequiredAt: this.addMilliseconds(now, this.getNumberConfig('SESSION_RENEW_REQUIRED_AFTER_MS', 300_000)),
       expiresAt: this.addMilliseconds(now, this.getNumberConfig('SESSION_EXPIRES_AFTER_MS', 86_400_000)),
@@ -74,6 +75,36 @@ export class SessionService {
       uuid: newSession.uuid,
       userId: newSession.userUuid,
       sessionSecret,
+      ownerUuid: newSession.ownerUuid,
+      expiresAt: newSession.expiresAt.toISOString(),
+    };
+  }
+
+  async issueGuest(dto: IssueGuestSessionDto): Promise<SessionIssueResult> {
+    if (dto.gateway !== 'client_gw' || dto.clientType !== 'web') {
+      throw new RpcException({ statusCode: 400, message: 'Guest sessions are available only to the storefront' });
+    }
+
+    const sessionSecret = this.generateSessionSecret();
+    const now = new Date();
+    const session = await this.sessionRepository.create({
+      ...dto,
+      userUuid: null,
+      ownerUuid: crypto.randomUUID(),
+      authMethod: 'guest',
+      assuranceLevel: 'anonymous',
+      fingerprintHash: this.hashFingerprint(dto.fingerprint),
+      secretHash: this.hashSessionSecret(sessionSecret),
+      renewRequiredAt: this.addMilliseconds(now, this.getNumberConfig('SESSION_RENEW_REQUIRED_AFTER_MS', 300_000)),
+      expiresAt: this.addMilliseconds(now, this.sessionLifetime(null)),
+    });
+
+    return {
+      uuid: session.uuid,
+      userId: null,
+      ownerUuid: session.ownerUuid,
+      sessionSecret,
+      expiresAt: session.expiresAt.toISOString(),
     };
   }
 
@@ -125,7 +156,7 @@ export class SessionService {
 
     const now = new Date();
 
-    if (now > session.expiresAt) {
+    if (now >= session.expiresAt) {
       await this.sessionRepository.expire(session.uuid);
 
       return null;
@@ -137,7 +168,7 @@ export class SessionService {
       currentSecretHash,
       fingerprintHash,
       this.addMilliseconds(now, this.getNumberConfig('SESSION_RENEW_REQUIRED_AFTER_MS', 300_000)),
-      this.addMilliseconds(now, this.getNumberConfig('SESSION_EXPIRES_AFTER_MS', 86_400_000)),
+      this.addMilliseconds(now, this.sessionLifetime(session.userUuid)),
       this.hashSessionSecret(sessionSecret),
       this.addMilliseconds(now, this.getNumberConfig('SESSION_RENEW_GRACE_AFTER_MS', 30_000)),
     );
@@ -150,17 +181,44 @@ export class SessionService {
       uuid: renewedSession.uuid,
       userId: renewedSession.userUuid,
       sessionSecret,
+      ownerUuid: renewedSession.ownerUuid,
+      expiresAt: renewedSession.expiresAt.toISOString(),
     };
   }
 
   async remove(dto: RemoveSessionDto) {
-    return await this.sessionRepository.remove({
+    const binding = {
       secretHash: this.hashSessionSecret(dto.sessionSecret),
       fingerprintHash: this.hashFingerprint(dto.fingerprint),
       clientType: dto.clientType,
       gateway: dto.gateway,
+    };
+    const removed = await this.sessionRepository.remove({
+      ...binding,
       revokeReason: 'manual',
     });
+    if (removed) return removed;
+    const previous = await this.sessionRepository.getByPreviousSecret(binding, new Date());
+    if (!previous) return null;
+    return this.sessionRepository.remove({
+      uuid: previous.uuid,
+      fingerprintHash: binding.fingerprintHash,
+      clientType: dto.clientType,
+      gateway: dto.gateway,
+      revokeReason: 'manual',
+    });
+  }
+
+  async check(sessionUuid: string): Promise<SessionVerifyResult> {
+    const session = await this.sessionRepository.get({ uuid: sessionUuid, gateway: 'client_gw' });
+    if (!session) return { data: { status: 'invalid' }, meta: {} };
+    return this.verifyActiveSession(session, new Date(), true);
+  }
+
+  private sessionLifetime(userUuid: string | null): number {
+    return userUuid === null
+      ? this.getNumberConfig('GUEST_SESSION_IDLE_TIMEOUT_MS', 30 * 24 * 60 * 60 * 1000)
+      : this.getNumberConfig('SESSION_EXPIRES_AFTER_MS', 86_400_000);
   }
 
   private generateSessionSecret(): string {
@@ -206,21 +264,19 @@ export class SessionService {
       return { data: { status: this.toVerifyStatus(session.status, session.isRevoked) }, meta: {} };
     }
 
-    if (now > session.expiresAt) {
+    if (now >= session.expiresAt) {
       await this.sessionRepository.expire(session.uuid);
 
       return { data: { status: 'expired' }, meta: {} };
     }
 
-    if (!isPreviousSecret && now >= session.renewRequiredAt) {
-      return { data: { status: 'renew_required' }, meta: {} };
-    }
-
     return {
       data: {
         sessionId: session.uuid,
-        status: 'active',
+        status: !isPreviousSecret && now >= session.renewRequiredAt ? 'renew_required' : 'active',
         userId: session.userUuid,
+        ownerUuid: session.ownerUuid,
+        expiresAt: session.expiresAt.toISOString(),
       },
       meta: {},
     };

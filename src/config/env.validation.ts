@@ -3,6 +3,7 @@ type EnvConfig = Record<string, unknown>;
 const requiredStringKeys = [
   'AMQP_IDENTITY_SRV_COMMAND_QUEUE',
   'AMQP_IDENTITY_SRV_EXCHANGE',
+  'AMQP_EVENTS_EXCHANGE',
   'AMQP_HOSTNAME',
   'AMQP_USERNAME',
   'AMQP_PASSWORD',
@@ -53,6 +54,12 @@ export function validateEnv(config: EnvConfig) {
   for (const key of requiredNumberKeys) {
     validatedConfig[key] = requireNumber(config, key);
   }
+
+  const guestLifetime = Number(config.GUEST_SESSION_IDLE_TIMEOUT_MS ?? 30 * 24 * 60 * 60 * 1000);
+  if (!Number.isSafeInteger(guestLifetime) || guestLifetime <= 0) {
+    throw new Error('GUEST_SESSION_IDLE_TIMEOUT_MS must be a positive integer');
+  }
+  validatedConfig.GUEST_SESSION_IDLE_TIMEOUT_MS = guestLifetime;
 
   return validatedConfig;
 }

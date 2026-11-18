@@ -1,12 +1,4 @@
-import {
-  Entity,
-  PrimaryColumn,
-  Column,
-  CreateDateColumn,
-  UpdateDateColumn,
-  JoinColumn,
-  ManyToOne,
-} from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, JoinColumn, ManyToOne } from 'typeorm';
 
 import { UserModel } from '../user/user.model';
 
@@ -15,12 +7,15 @@ export class SessionModel {
   @PrimaryColumn('uuid', { name: 'uuid', default: () => 'gen_random_uuid()' })
   uuid: string;
 
-  @Column({ name: 'user_uuid' })
-  userUuid: string;
+  @Column({ name: 'user_uuid', type: 'uuid', nullable: true })
+  userUuid: string | null;
+
+  @Column({ name: 'owner_uuid', type: 'uuid' })
+  ownerUuid: string;
 
   @JoinColumn({ name: 'user_uuid' })
   @ManyToOne(() => UserModel, (user) => user.uuid, { cascade: true, onDelete: 'CASCADE' })
-  user: UserModel;
+  user: UserModel | null;
 
   @Column({ name: 'device', type: 'varchar', length: 256 })
   device: string;

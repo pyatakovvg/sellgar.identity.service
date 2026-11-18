@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { GuestSessions1794870000000 } from './migrations/1794870000000-guest-sessions';
 import { DataSource } from 'typeorm';
 
 import { UserModel } from './api/v1/user/user.model';
@@ -27,6 +28,7 @@ export default new DataSource({
     SessionBindingRenewWindow1718451000000,
     DropLegacySessionColumns1718452000000,
     SessionRenewSecretGrace1718453000000,
+    GuestSessions1794870000000,
   ],
   migrationsTableName: 'typeorm_migrations',
   synchronize: false,
