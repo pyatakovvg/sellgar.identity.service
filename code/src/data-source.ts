@@ -10,6 +10,7 @@ import { SessionFirstAuth1718450000000 } from './migrations/1718450000000-sessio
 import { SessionBindingRenewWindow1718451000000 } from './migrations/1718451000000-session-binding-renew-window';
 import { DropLegacySessionColumns1718452000000 } from './migrations/1718452000000-drop-legacy-session-columns';
 import { SessionRenewSecretGrace1718453000000 } from './migrations/1718453000000-session-renew-secret-grace';
+import { InitialIdentitySchema1718449000000 } from './migrations/1718449000000-initial-identity-schema';
 
 declare const process: {
   env: Record<string, string | undefined>;
@@ -24,6 +25,7 @@ export default new DataSource({
   database: process.env.DATABASE_DATABASE_NAME,
   entities: [UserModel, PersonModel, SessionModel],
   migrations: [
+    InitialIdentitySchema1718449000000,
     SessionFirstAuth1718450000000,
     SessionBindingRenewWindow1718451000000,
     DropLegacySessionColumns1718452000000,

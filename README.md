@@ -25,97 +25,54 @@ Identity service владеет доменной моделью identity и вр
 
 Gateway может хранить transport cookie, но валидность сессии и token lifecycle остаются в этом сервисе.
 
-## Текущая структура
-
-Репозиторий схлопнут в одиночный package:
+## Структура и запуск
 
 ```text
-.
-├── package.json
-├── .env.example
-├── nest-cli.json
-├── tsconfig.json
-├── tsconfig.build.json
-├── src/
-│   ├── main.ts
-│   ├── app.module.ts
-│   └── api/
-│       └── v1/
-│           ├── access-token/
-│           ├── auth/
-│           ├── person/
-│           ├── refresh-token/
-│           ├── session/
-│           └── user/
-└── AGENTS.md
+code/                   Nest source, package.json, Yarn lock, .env.example
+Dockerfile              Node 24 build/test and non-root production image
+.github/                image CI, release button and isolated smoke
+helm/values.app.yaml    common application values and Secret references
+helm/dev/values.yaml    development .env ConfigMap, one replica
+helm/prod/values.yaml   production overrides (not deployed yet)
 ```
 
-## Установка
-
-Из корня репозитория:
-
-```bash
-yarn install
-```
-
-Репозиторий использует Yarn 3.6.1 и `nodeLinker: node-modules`.
-
-Требуемая версия Node.js: 24+.
-
-## Локальный запуск
-
-Подготовить env:
+Из `code/`:
 
 ```bash
 cp .env.example .env
+node .yarn/releases/yarn-4.18.0.cjs install --immutable
+node .yarn/releases/yarn-4.18.0.cjs test --runInBand
+node .yarn/releases/yarn-4.18.0.cjs build:identity_srv
+node node_modules/typeorm/cli.js -d dist/data-source.js migration:run
+node .yarn/releases/yarn-4.18.0.cjs start:identity_srv.prod
 ```
 
-Для запуска нужны внешние зависимости:
+Необходимы PostgreSQL и RabbitMQ. Доменные команды остаются RMQ; внутренний
+`GET /health` на PORT (default 8080) проверяет базу и RMQ consumer. Отключение
+брокера/базы возвращает 503. Внешнего HTTP API/Ingress у сервиса нет.
 
-- RabbitMQ;
-- PostgreSQL с базой `identity_srv`.
+## CI и Kubernetes
 
-Запуск:
+Push в development/release/*: build image → isolated smoke → GHCR publish.
+Smoke применяет все шесть миграций на пустой базе, повторяет migration:run,
+проверяет guest issue/verify/fingerprint binding/renew/check/revoke через RMQ,
+non-root запуск с read-only filesystem и mounted `.env`, затем проверяет
+снятие readiness при отключении тестового RabbitMQ. Рабочие данные не используются.
 
-```bash
-yarn start:dev
-```
+Release/* вливается в master; workflow Release to production запускается вручную
+с ID успешной release-сборки. Продвигается тот же digest, без пересборки; workflow
+готовит production manifest и back-merge PR master → development. Подключение этого
+manifest к prod Argo CD — отдельный этап; production сейчас не развёрнут.
 
-Production-like старт после сборки:
+ConfigMap `.env` монтируется в `/app/.env` при запуске. Секреты БД, брокера и
+Identity передаются из Kubernetes Secret через environment; в образе их нет.
+Отдельная база/владелец `identity_srv` создаются оператором CloudNativePG из
+infrastructure desired state. Перед Deployment запускается migration Sync Job;
+TypeORM synchronize не используется. Baseline создаёт отсутствовавшие в старом
+наборе миграций базовые таблицы, сохраняя уже существующие установки.
 
-```bash
-yarn build
-yarn start
-```
-
-## Проверки
-
-Минимальная проверка перед commit:
-
-```bash
-yarn build
-```
-
-GitHub Actions запускает:
-
-```bash
-yarn install --immutable
-yarn build
-```
-
-## Dev infrastructure
-
-В этом repo намеренно нет:
-
-- `docker-compose.yaml` для MinIO/RabbitMQ/Postgres;
-- OS-level install scripts для RabbitMQ;
-- GitLab CI.
-
-RabbitMQ и PostgreSQL должны запускаться из общей dev-инфры `sellgar.workspace` или вручную в локальном окружении. MinIO не является зависимостью identity service.
-
-## Документация для агентов
-
-Архитектурные ограничения, текущий аудит и порядок безопасных изменений описаны в `AGENTS.md`.
+Argo CD Application, image digest и закреплённые revisions chart/values находятся
+в `sellgar.infrastructure/environments/dev/services/identity-service/`.
 
 ## Session context посетителя
 

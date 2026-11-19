@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { ApiV1Module } from './api/v1/api-v1.module';
 import { validateEnv } from './config/env.validation';
+import { HealthModule } from './api/health/health.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { validateEnv } from './config/env.validation';
     }),
 
     ApiV1Module,
+    HealthModule,
   ],
 })
 export class AppModule {}

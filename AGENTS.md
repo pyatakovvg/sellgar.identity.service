@@ -1,16 +1,16 @@
 # @service/identity
 
-`services/identity_srv` - доменный сервис идентификации. Он владеет пользователями, персонами, auth, access/refresh tokens и сессиями.
+`code/` - доменный сервис идентификации. Он владеет пользователями, персонами, auth, access/refresh tokens и сессиями.
 
 ## Что здесь находится
 
-- `src/main.ts` - Nest bootstrap как RMQ microservice command consumer.
-- `src/app.module.ts` - `ConfigModule`, PostgreSQL через TypeORM и `ApiV1Module`.
-- `src/api/v1/auth` - авторизация и refresh flow.
-- `src/api/v1/user` - пользовательская модель и операции.
-- `src/api/v1/person` - персональные данные.
-- `src/api/v1/session` - сессии и их repository/service/controller слои.
-- `src/api/v1/access-token` и `src/api/v1/refresh-token` - выпуск и проверка токенов.
+- `code/src/main.ts` - Nest bootstrap как RMQ microservice command consumer.
+- `code/src/app.module.ts` - `ConfigModule`, PostgreSQL через TypeORM и `ApiV1Module`.
+- `code/src/api/v1/auth` - авторизация и refresh flow.
+- `code/src/api/v1/user` - пользовательская модель и операции.
+- `code/src/api/v1/person` - персональные данные.
+- `code/src/api/v1/session` - сессии и их repository/service/controller слои.
+- `code/src/api/v1/access-token` и `code/src/api/v1/refresh-token` - выпуск и проверка токенов.
 
 ## Правила изменений
 
@@ -21,7 +21,9 @@
 
 ## Проверка
 
-Основная проверка: `yarn workspace @service/identity run build`.
+Из `code/`: `node .yarn/releases/yarn-4.18.0.cjs test --runInBand` и
+`node .yarn/releases/yarn-4.18.0.cjs build:identity_srv`.
+Production image проверяется `.github/scripts/smoke-image.py`.
 
 ## Владелец корзины и приватные сокеты
 
@@ -45,3 +47,17 @@ Issue/renew/active verify возвращают ownerUuid и expiresAt. Для с
 - Отзыв и истечение гостя пишут identity.owner.closed.v1 в session_owner_outbox. Worker завершает истёкшие сессии и публикует события с повтором; бизнес-политики принадлежат consumers. Отзыв аккаунтной сессии не закрывает владельца.
 - AMQP_EVENTS_EXCHANGE обязателен. Consumer durable queue/binding разворачивается до первого события.
 - Migration: GuestSessions1794870000000. synchronize не включать. Без локального ts-node: после build выполнить node node_modules/typeorm/cli.js -d dist/data-source.js migration:run.
+
+## Deployment
+
+- Структура: `code/`, root `Dockerfile`, `.github/`, `helm/values.app.yaml`,
+  `helm/dev/values.yaml`, `helm/prod/values.yaml`. Общий chart в infrastructure.
+- Рабочая ветка development; release/* → master и ручное продвижение того же image digest.
+- `/health` — внутренний operational endpoint на PORT (default 8080), проверяет
+  соединение command consumer с RabbitMQ и запрос PostgreSQL. Доменные операции — RMQ.
+- Не добавлять внешний Ingress для Identity. Secret refs остаются в Helm values;
+  значения генерируются Kubernetes bootstrap, не попадают в image/Git/ConfigMap.
+- `InitialIdentitySchema1718449000000` создаёт базовые user/person/session в пустой
+  БД до прежних миграций; существующие три таблицы принимает без изменения данных.
+  Неполная базовая схема блокирует миграцию. Автоматический откат baseline запрещён.
+- Migration Sync Job должен завершиться до старта новой реплики. Synchronize запрещён.
